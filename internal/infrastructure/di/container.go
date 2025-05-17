@@ -7,9 +7,11 @@ import (
 	"github.com/HasanNugroho/gin-clean/internal/domain/repository"
 	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/postgresql"
 	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/handler"
+	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/middleware"
 	"github.com/HasanNugroho/gin-clean/internal/service"
 	"github.com/HasanNugroho/gin-clean/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/sarulabs/di/v2"
 	"gorm.io/gorm"
 )
@@ -41,11 +43,20 @@ func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *g
 			},
 		},
 		{
+			Name: "validate",
+			Build: func(ctn di.Container) (interface{}, error) {
+				return validator.New(), nil
+			},
+		},
+		{
 			Name: "db",
 			Build: func(ctn di.Container) (interface{}, error) {
 				return gormDB, nil
 			},
 		},
+
+		// CORE
+		// user module
 		{
 			Name: "user-repository",
 			Build: func(ctn di.Container) (interface{}, error) {
@@ -61,6 +72,18 @@ func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *g
 				), nil
 			},
 		},
+
+		//middleware
+		{
+			Name: "auth-middleware",
+			Build: func(ctn di.Container) (interface{}, error) {
+				return middleware.NewAuthMiddleware(
+					ctn.Get("logger").(*logger.Logger),
+					ctn.Get("user-service").(*service.UserService),
+				), nil
+			},
+		},
+
 		{
 			Name: "user-handler",
 			Build: func(ctn di.Container) (interface{}, error) {
@@ -68,6 +91,34 @@ func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *g
 					ctn.Get("base-route").(*gin.RouterGroup),
 					ctn.Get("user-service").(*service.UserService),
 					ctn.Get("logger").(*logger.Logger),
+					ctn.Get("validate").(*validator.Validate),
+					ctn.Get("auth-middleware").(*middleware.AuthMiddleware),
+				)
+				return nil, nil
+			},
+		},
+
+		// auth module
+		{
+			Name: "auth-service",
+			Build: func(ctn di.Container) (interface{}, error) {
+				return service.NewAuthService(
+					ctn.Get("user-repository").(repository.UserRepository),
+					ctn.Get("logger").(*logger.Logger),
+					ctn.Get("config").(*config.Config),
+					time.Duration(cfg.Context.Timeout)*time.Second,
+				), nil
+			},
+		},
+		{
+			Name: "auth-handler",
+			Build: func(ctn di.Container) (interface{}, error) {
+				handler.RegisterAuthRoutes(
+					ctn.Get("base-route").(*gin.RouterGroup),
+					ctn.Get("auth-service").(*service.AuthService),
+					ctn.Get("logger").(*logger.Logger),
+					ctn.Get("validate").(*validator.Validate),
+					ctn.Get("auth-middleware").(*middleware.AuthMiddleware),
 				)
 				return nil, nil
 			},

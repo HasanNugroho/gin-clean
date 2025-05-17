@@ -25,6 +25,9 @@ func (e *AppError) Unwrap() error {
 }
 
 func New(code, message string, status int, err error) *AppError {
+	if message == "" {
+		message = defaultMessage(code)
+	}
 	return &AppError{
 		Code:    code,
 		Message: message,
@@ -34,13 +37,21 @@ func New(code, message string, status int, err error) *AppError {
 }
 
 var (
-	ErrNotFound       = New("NOT_FOUND", "Resource not found", http.StatusNotFound, nil)
-	ErrUnauthorized   = New("UNAUTHORIZED", "Unauthorized access", http.StatusUnauthorized, nil)
-	ErrForbidden      = New("FORBIDDEN", "Forbidden", http.StatusForbidden, nil)
-	ErrBadRequest     = New("BAD_REQUEST", "Bad request", http.StatusBadRequest, nil)
-	ErrInternalServer = New("INTERNAL_SERVER_ERROR", "Internal server error", http.StatusInternalServerError, nil)
-	ErrConflict       = New("CONFLICT", "Conflict", http.StatusConflict, nil)
+	ErrNotFound       = base("NOT_FOUND", http.StatusNotFound)
+	ErrUnauthorized   = base("UNAUTHORIZED", http.StatusUnauthorized)
+	ErrForbidden      = base("FORBIDDEN", http.StatusForbidden)
+	ErrBadRequest     = base("BAD_REQUEST", http.StatusBadRequest)
+	ErrInternalServer = base("INTERNAL_SERVER_ERROR", http.StatusInternalServerError)
+	ErrConflict       = base("CONFLICT", http.StatusConflict)
 )
+
+func base(code string, status int) *AppError {
+	return &AppError{
+		Code:    code,
+		Message: defaultMessage(code),
+		Status:  status,
+	}
+}
 
 func Wrap(base *AppError, err error) *AppError {
 	return &AppError{
@@ -49,6 +60,10 @@ func Wrap(base *AppError, err error) *AppError {
 		Status:  base.Status,
 		Err:     err,
 	}
+}
+
+func Custom(code, message string, status int) *AppError {
+	return New(code, message, status, nil)
 }
 
 func Is(target error, code string) bool {
@@ -60,18 +75,28 @@ func Is(target error, code string) bool {
 }
 
 func StatusCode(err error) int {
-	switch {
-	case errors.Is(err, ErrBadRequest):
-		return http.StatusBadRequest
-	case errors.Is(err, ErrUnauthorized):
-		return http.StatusUnauthorized
-	case errors.Is(err, ErrForbidden):
-		return http.StatusForbidden
-	case errors.Is(err, ErrNotFound):
-		return http.StatusNotFound
-	case errors.Is(err, ErrConflict):
-		return http.StatusConflict
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		return appErr.Status
+	}
+	return http.StatusInternalServerError
+}
+
+func defaultMessage(code string) string {
+	switch code {
+	case "NOT_FOUND":
+		return "Resource not found"
+	case "UNAUTHORIZED":
+		return "Unauthorized access"
+	case "FORBIDDEN":
+		return "Forbidden"
+	case "BAD_REQUEST":
+		return "Bad request"
+	case "CONFLICT":
+		return "Conflict"
+	case "INTERNAL_SERVER_ERROR":
+		return "Internal server error"
 	default:
-		return http.StatusInternalServerError
+		return "Unexpected error"
 	}
 }

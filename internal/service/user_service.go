@@ -28,7 +28,7 @@ func (u *UserService) Create(ctx context.Context, req *dto.CreateUserRequest) (e
 
 	existing, err := u.repo.GetByEmail(ctx, req.Email)
 	if existing != nil {
-		return errors.Wrap(errors.ErrBadRequest, err)
+		return errors.Wrap(errors.ErrConflict, err)
 	}
 
 	user := &entity.User{

@@ -4,14 +4,18 @@ definitions:
     enum:
     - user
     - admin
-    - owner
-    - customer
     type: string
     x-enum-varnames:
     - ROLE_USER
     - ROLE_ADMIN
-    - ROLE_OWNER
-    - ROLE_CUSTOMER
+  dto.AuthResponse:
+    properties:
+      data: {}
+      refresh_token:
+        type: string
+      token:
+        type: string
+    type: object
   dto.CreateUserRequest:
     properties:
       email:
@@ -36,6 +40,24 @@ definitions:
     - name
     - password
     - phone_number
+    type: object
+  dto.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 6
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  dto.RenewalTokenRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
     type: object
   dto.UpdateUserRequest:
     properties:
@@ -62,9 +84,17 @@ definitions:
   response.Meta:
     properties:
       code:
-        type: string
+        type: integer
+      limit:
+        type: integer
       message:
         type: string
+      page:
+        type: integer
+      total_pages:
+        type: integer
+      total_rows:
+        type: integer
     type: object
   response.Response:
     properties:
@@ -79,6 +109,88 @@ info:
   title: Example Rest API
   version: "1.0"
 paths:
+  /v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and return access token
+      parameters:
+      - description: Login credentials
+        in: body
+        name: login
+        required: true
+        schema:
+          $ref: '#/definitions/dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.AuthResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: User login
+      tags:
+      - auth
+  /v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Use refresh token to obtain new access token
+      parameters:
+      - description: Refresh token payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RenewalTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.AuthResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Refresh access token
+      tags:
+      - auth
   /v1/users:
     post:
       consumes:
@@ -97,21 +209,22 @@ paths:
         "201":
           description: Created
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/response.Response'
         "500":
           description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/response.Response'
       summary: Create a user (admin)
       tags:
       - Users
@@ -124,19 +237,28 @@ paths:
         name: id
         required: true
         type: string
+      produces:
+      - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
         "404":
           description: Not Found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
       summary: Delete user
       tags:
       - Users
@@ -154,14 +276,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
         "404":
           description: Not Found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
       summary: Get user by ID
       tags:
       - Users
@@ -185,24 +313,26 @@ paths:
       - application/json
       responses:
         "200":
-          description: User updated successfully
+          description: OK
           schema:
             allOf:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
+                  additionalProperties:
+                    type: string
                   type: object
               type: object
         "400":
-          description: Invalid request payload
+          description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
         "404":
-          description: User not found
+          description: Not Found
           schema:
             $ref: '#/definitions/response.Response'
         "500":
-          description: Internal server error
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/response.Response'
       summary: Update user by ID

@@ -8,6 +8,7 @@ import (
 	"github.com/HasanNugroho/gin-clean/docs"
 	"github.com/HasanNugroho/gin-clean/internal/infrastructure/di"
 	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/postgresql"
+	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/middleware"
 	"github.com/HasanNugroho/gin-clean/pkg/logger"
 	"github.com/gin-gonic/gin"
 	swaggerfiles "github.com/swaggo/files"
@@ -45,6 +46,7 @@ func main() {
 	engine := gin.Default()
 
 	engine.Use(gin.Recovery())
+	engine.Use(middleware.ErrorHandler(appLogger))
 
 	// Setup Dependency Injection container with Gin engine and other dependencies
 	container, err := di.Build(engine, cfg, appLogger, db)
@@ -55,6 +57,8 @@ func main() {
 
 	// Triggerhandler registration
 	_ = container.Get("user-handler")
+	_ = container.Get("auth-handler")
+	_ = container.Get("auth-middleware")
 
 	// Setup Swagger documentation routes
 	setupSwagger(engine, cfg)
