@@ -8,7 +8,8 @@ import (
 
 	"github.com/HasanNugroho/gin-clean/config"
 	"github.com/HasanNugroho/gin-clean/pkg/errors"
-	"github.com/go-redis/redis/v8"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type RedisCache struct {
@@ -23,6 +24,10 @@ func NewRedisCache(config *config.Config) *RedisCache {
 		DB:       0,
 	})
 	return &RedisCache{client: client}
+}
+
+func (c *RedisCache) Client() *redis.Client {
+	return c.client
 }
 
 func (c *RedisCache) Get(ctx context.Context, key string, value interface{}) error {
