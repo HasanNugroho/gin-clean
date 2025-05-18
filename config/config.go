@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -13,6 +14,7 @@ type Config struct {
 	Secret   Secret   `mapstructure:",squash"`
 	Redis    Redis    `mapstructure:",squash"`
 	Context  Context  `mapstructure:",squash"`
+	Security Security `mapstructure:",squash"`
 }
 
 type Server struct {
@@ -48,6 +50,20 @@ type Context struct {
 	Timeout int `mapstructure:"TIMEOUT"`
 }
 
+type Security struct {
+	RateLimit         string   `mapstructure:"RATE_LIMIT"`
+	AllowedOrigins    []string `mapstructure:"ALLOWED_ORIGINS"`
+	TrustedPlatform   string   `mapstructure:"TRUSTED_PLATFORM"`
+	ExpectedHost      string   `mapstructure:"EXPECTED_HOST"`
+	XFrameOptions     string   `mapstructure:"X_FRAME_OPTIONS"`
+	ContentSecurity   string   `mapstructure:"CONTENT_SECURITY_POLICY"`
+	XXSSProtection    string   `mapstructure:"X_XSS_PROTECTION"`
+	StrictTransport   string   `mapstructure:"STRICT_TRANSPORT_SECURITY"`
+	ReferrerPolicy    string   `mapstructure:"REFERRER_POLICY"`
+	XContentTypeOpts  string   `mapstructure:"X_CONTENT_TYPE_OPTIONS"`
+	PermissionsPolicy string   `mapstructure:"PERMISSIONS_POLICY"`
+}
+
 func Get() (config *Config, err error) {
 	viper.SetConfigFile(".env")
 	viper.AutomaticEnv()
@@ -64,18 +80,21 @@ func Get() (config *Config, err error) {
 		return nil, fmt.Errorf("LOG_LEVEL must be between -1 (trace) and 5 (panic), got %d", config.Server.LogLevel)
 	}
 
+	if _, err := time.ParseDuration(config.Secret.TokenExpiry); err != nil {
+		return nil, fmt.Errorf("invalid TOKEN_EXPIRY: %w", err)
+	}
+
+	if _, err := time.ParseDuration(config.Secret.RefreshTokenExpiry); err != nil {
+		return nil, fmt.Errorf("invalid REFRESH_TOKEN_EXPIRY: %w", err)
+	}
+
 	timeoutSeconds := viper.GetInt("TIMEOUT")
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 3600
 	}
-	config.Context.Timeout = int(time.Duration(timeoutSeconds) * time.Second)
 
-	if _, err := time.ParseDuration(config.Secret.TokenExpiry); err != nil {
-		return nil, fmt.Errorf("invalid TOKEN_EXPIRY: %w", err)
-	}
-	if _, err := time.ParseDuration(config.Secret.RefreshTokenExpiry); err != nil {
-		return nil, fmt.Errorf("invalid REFRESH_TOKEN_EXPIRY: %w", err)
-	}
+	config.Context.Timeout = int(time.Duration(timeoutSeconds) * time.Second)
+	config.Security.AllowedOrigins = strings.Split(viper.GetString("ALLOWED_ORIGINS"), ",")
 
 	return
 }
