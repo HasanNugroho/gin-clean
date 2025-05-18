@@ -5,10 +5,12 @@ import (
 
 	"github.com/HasanNugroho/gin-clean/config"
 	"github.com/HasanNugroho/gin-clean/internal/domain/repository"
+	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/cache"
 	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/postgresql"
 	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/handler"
 	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/middleware"
 	"github.com/HasanNugroho/gin-clean/internal/service"
+	"github.com/HasanNugroho/gin-clean/pkg/jwt"
 	"github.com/HasanNugroho/gin-clean/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -16,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *gorm.DB) (di.Container, error) {
+func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *gorm.DB, cache *cache.RedisCache) (di.Container, error) {
 	builder, err := di.NewBuilder()
 	if err != nil {
 		return di.Container{}, err
@@ -54,15 +56,28 @@ func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *g
 				return gormDB, nil
 			},
 		},
+		{
+			Name: "cache",
+			Build: func(ctn di.Container) (interface{}, error) {
+				return cache, nil
+			},
+		},
+		{
+			Name: "jwt",
+			Build: func(ctn di.Container) (interface{}, error) {
+				return jwt.SetJWTHelper(cfg, cache), nil
+			},
+		},
 
-		// CORE
-		// user module
+		// REPOSITORY
 		{
 			Name: "user-repository",
 			Build: func(ctn di.Container) (interface{}, error) {
 				return postgresql.NewUserRepository(ctn.Get("db").(*gorm.DB)), nil
 			},
 		},
+
+		// SERVICE
 		{
 			Name: "user-service",
 			Build: func(ctn di.Container) (interface{}, error) {
@@ -72,18 +87,33 @@ func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *g
 				), nil
 			},
 		},
+		{
+			Name: "auth-service",
+			Build: func(ctn di.Container) (interface{}, error) {
+				return service.NewAuthService(
+					ctn.Get("user-repository").(repository.UserRepository),
+					ctn.Get("logger").(*logger.Logger),
+					ctn.Get("config").(*config.Config),
+					ctn.Get("jwt").(*jwt.TokenGenerator),
+					time.Duration(cfg.Context.Timeout)*time.Second,
+				), nil
+			},
+		},
 
-		//middleware
+		// MIDDLEWARE & DEPENDENCY
 		{
 			Name: "auth-middleware",
 			Build: func(ctn di.Container) (interface{}, error) {
 				return middleware.NewAuthMiddleware(
 					ctn.Get("logger").(*logger.Logger),
 					ctn.Get("user-service").(*service.UserService),
+					ctn.Get("jwt").(*jwt.TokenGenerator),
+					cache,
 				), nil
 			},
 		},
 
+		// HANDLER
 		{
 			Name: "user-handler",
 			Build: func(ctn di.Container) (interface{}, error) {
@@ -95,19 +125,6 @@ func Build(engine *gin.Engine, cfg *config.Config, log *logger.Logger, gormDB *g
 					ctn.Get("auth-middleware").(*middleware.AuthMiddleware),
 				)
 				return nil, nil
-			},
-		},
-
-		// auth module
-		{
-			Name: "auth-service",
-			Build: func(ctn di.Container) (interface{}, error) {
-				return service.NewAuthService(
-					ctn.Get("user-repository").(repository.UserRepository),
-					ctn.Get("logger").(*logger.Logger),
-					ctn.Get("config").(*config.Config),
-					time.Duration(cfg.Context.Timeout)*time.Second,
-				), nil
 			},
 		},
 		{

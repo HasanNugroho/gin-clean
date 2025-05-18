@@ -82,6 +82,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 // @Failure      404  {object}  response.Response
 // @Failure      500  {object}  response.Response
 // @Router       /v1/users/{id} [get]
+// @Security     BearerAuth
 func (h *UserHandler) GetById(c *gin.Context) {
 	id, ok := h.validateUUID(c, "id")
 	if !ok {
@@ -110,6 +111,7 @@ func (h *UserHandler) GetById(c *gin.Context) {
 // @Failure      404   {object}  response.Response
 // @Failure      500   {object}  response.Response
 // @Router       /v1/users/{id} [put]
+// @Security     BearerAuth
 func (h *UserHandler) Update(c *gin.Context) {
 	id, ok := h.validateUUID(c, "id")
 	if !ok {
@@ -142,6 +144,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 // @Failure      404  {object}  response.Response
 // @Failure      500  {object}  response.Response
 // @Router       /v1/users/{id} [delete]
+// @Security     BearerAuth
 func (h *UserHandler) Delete(c *gin.Context) {
 	id, ok := h.validateUUID(c, "id")
 	if !ok {

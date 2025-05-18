@@ -62,6 +62,26 @@ func Wrap(base *AppError, err error) *AppError {
 	}
 }
 
+func (e *AppError) WithMessage(msg string) *AppError {
+	e.Message = msg
+	return e
+}
+
+func (e *AppError) WithCode(code string) *AppError {
+	e.Code = code
+	return e
+}
+
+func (e *AppError) WithStatus(status int) *AppError {
+	e.Status = status
+	return e
+}
+
+func (e *AppError) WithError(err error) *AppError {
+	e.Err = err
+	return e
+}
+
 func Custom(code, message string, status int) *AppError {
 	return New(code, message, status, nil)
 }

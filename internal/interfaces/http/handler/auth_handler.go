@@ -2,10 +2,11 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
+	"github.com/HasanNugroho/gin-clean/internal/domain/service"
 	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/dto"
 	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/middleware"
-	"github.com/HasanNugroho/gin-clean/internal/service"
 	"github.com/HasanNugroho/gin-clean/pkg/errors"
 	"github.com/HasanNugroho/gin-clean/pkg/logger"
 	"github.com/HasanNugroho/gin-clean/pkg/response"
@@ -15,22 +16,23 @@ import (
 )
 
 type AuthHandler struct {
-	service  *service.AuthService
+	service  service.AuthService
 	log      *logger.Logger
 	validate *validator.Validate
 }
 
-func RegisterAuthRoutes(r *gin.RouterGroup, service *service.AuthService, log *logger.Logger, validate *validator.Validate, authMiddleware *middleware.AuthMiddleware) {
+func RegisterAuthRoutes(r *gin.RouterGroup, service service.AuthService, log *logger.Logger, validate *validator.Validate, authMiddleware *middleware.AuthMiddleware) {
 	handler := NewAuthHandler(service, log, validate)
 	authGroup := r.Group("v1/auth")
 	{
 		authGroup.POST("/login", handler.Login)
-		authGroup.POST("/refresh", authMiddleware.AuthRequired(), handler.RefreshToken)
+		authGroup.POST("/refresh", handler.RefreshToken)
+		authGroup.POST("/logout", authMiddleware.AuthRequired(), handler.Logout)
 	}
 	log.Info("Auth routes registered.")
 }
 
-func NewAuthHandler(service *service.AuthService, log *logger.Logger, validate *validator.Validate) *AuthHandler {
+func NewAuthHandler(service service.AuthService, log *logger.Logger, validate *validator.Validate) *AuthHandler {
 	return &AuthHandler{
 		service:  service,
 		log:      log,
@@ -50,7 +52,6 @@ func NewAuthHandler(service *service.AuthService, log *logger.Logger, validate *
 // @Failure      401  {object}  response.Response
 // @Failure      500  {object}  response.Response
 // @Router       /v1/auth/login [post]
-// @Security     ApiKeyAuth
 func (h *AuthHandler) Login(ctx *gin.Context) {
 	req, ok := validation.ValidateBody[dto.LoginRequest](ctx, h.validate, h.log)
 	if !ok {
@@ -79,7 +80,6 @@ func (h *AuthHandler) Login(ctx *gin.Context) {
 // @Failure      401  {object}  response.Response
 // @Failure      500  {object}  response.Response
 // @Router       /v1/auth/refresh [post]
-// @Security     ApiKeyAuth
 func (h *AuthHandler) RefreshToken(ctx *gin.Context) {
 	req, ok := validation.ValidateBody[dto.RenewalTokenRequest](ctx, h.validate, h.log)
 	if !ok {
@@ -94,4 +94,39 @@ func (h *AuthHandler) RefreshToken(ctx *gin.Context) {
 	}
 
 	response.SendSuccess(ctx, http.StatusOK, "Token refreshed successfully", resp)
+}
+
+// Logout godoc
+// @Summary      Logout session
+// @Description  Invalidate access & refresh token by blacklisting them
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body  dto.RenewalTokenRequest  true  "Refresh token payload"
+// @Success      200  {object}  response.Response{data=string}
+// @Failure      400  {object}  response.Response
+// @Failure      401  {object}  response.Response
+// @Failure      500  {object}  response.Response
+// @Router       /v1/auth/logout [post]
+// @Security     BearerAuth
+func (h *AuthHandler) Logout(ctx *gin.Context) {
+	accessToken := strings.TrimPrefix(ctx.GetHeader("Authorization"), "Bearer ")
+	if accessToken == "" {
+		response.SendError(ctx, http.StatusBadRequest, "missing access token", nil)
+		return
+	}
+
+	req, ok := validation.ValidateBody[dto.RenewalTokenRequest](ctx, h.validate, h.log)
+	if !ok {
+		return
+	}
+
+	err := h.service.Logout(ctx.Request.Context(), accessToken, *req)
+	if err != nil {
+		h.log.Error("Logout failed", err)
+		response.SendError(ctx, errors.StatusCode(err), "logout failed", err.Error())
+		return
+	}
+
+	response.SendSuccess(ctx, http.StatusOK, "logout successful", nil)
 }

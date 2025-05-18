@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -32,7 +33,9 @@ type Database struct {
 }
 
 type Secret struct {
-	Jwt string `mapstructure:"SECRET_KEY"`
+	Jwt                string `mapstructure:"SECRET_KEY"`
+	TokenExpiry        string `mapstructure:"TOKEN_EXPIRY"`
+	RefreshTokenExpiry string `mapstructure:"REFRESH_TOKEN_EXPIRY"`
 }
 
 type Redis struct {
@@ -59,6 +62,19 @@ func Get() (config *Config, err error) {
 
 	if config.Server.LogLevel < -1 || config.Server.LogLevel > 5 {
 		return nil, fmt.Errorf("LOG_LEVEL must be between -1 (trace) and 5 (panic), got %d", config.Server.LogLevel)
+	}
+
+	timeoutSeconds := viper.GetInt("TIMEOUT")
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 3600
+	}
+	config.Context.Timeout = int(time.Duration(timeoutSeconds) * time.Second)
+
+	if _, err := time.ParseDuration(config.Secret.TokenExpiry); err != nil {
+		return nil, fmt.Errorf("invalid TOKEN_EXPIRY: %w", err)
+	}
+	if _, err := time.ParseDuration(config.Secret.RefreshTokenExpiry); err != nil {
+		return nil, fmt.Errorf("invalid REFRESH_TOKEN_EXPIRY: %w", err)
 	}
 
 	return

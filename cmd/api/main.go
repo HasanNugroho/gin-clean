@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/HasanNugroho/gin-clean/config"
 	"github.com/HasanNugroho/gin-clean/docs"
 	"github.com/HasanNugroho/gin-clean/internal/infrastructure/di"
+	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/cache"
 	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/postgresql"
 	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/middleware"
 	"github.com/HasanNugroho/gin-clean/pkg/logger"
@@ -22,7 +24,7 @@ import (
 // @host      localhost:7000
 // @BasePath  /api
 
-// @securityDefinitions.apikey ApiKeyAuth
+// @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
 func main() {
@@ -34,24 +36,28 @@ func main() {
 	}
 
 	// Initialize logger
-	appLogger := logger.NewLogger(cfg.Server.LogLevel)
+	log := logger.NewLogger(cfg.Server.LogLevel)
 
 	// Initialize PostgreSQL connection
 	db, err := postgresql.NewPostgresDB(cfg)
 	if err != nil {
-		appLogger.Fatal("Failed to connect to PostgreSQL", err)
+		log.Fatal("Failed to connect to PostgreSQL", err)
+	}
+
+	// Initialize cache connection
+	e := cache.NewRedisCache(cfg)
+	if err := e.Ping(context.Background()); err != nil {
+		log.Fatal("Failed to connect to Redis", err)
 	}
 
 	// Initialize Gin engine
 	engine := gin.Default()
-
-	engine.Use(gin.Recovery())
-	engine.Use(middleware.ErrorHandler(appLogger))
+	engine.Use(gin.Recovery(), middleware.ErrorHandler(log))
 
 	// Setup Dependency Injection container with Gin engine and other dependencies
-	container, err := di.Build(engine, cfg, appLogger, db)
+	container, err := di.Build(engine, cfg, log, db, e)
 	if err != nil {
-		appLogger.Fatal("Failed to build DI container", err)
+		log.Fatal("Failed to build DI container", err)
 	}
 	defer container.Clean()
 
@@ -60,12 +66,12 @@ func main() {
 	_ = container.Get("auth-handler")
 	_ = container.Get("auth-middleware")
 
-	// Setup Swagger documentation routes
+	// Swagger
 	setupSwagger(engine, cfg)
 
 	// Start Gin HTTP server
 	if err := engine.Run(fmt.Sprintf(":%s", cfg.Server.Port)); err != nil {
-		fmt.Printf("Failed to run server: %v\n", err)
+		log.Fatal("Failed to run server: %v\n", err)
 	}
 }
 

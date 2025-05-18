@@ -8,6 +8,11 @@ all: build
 
 ## ---------- Build & Run ----------
 
+setup:
+	@echo "📦 Setting up project..."
+	@go mod download & go mod tidy
+	@cp .env.example .env || true
+
 ## build: Build the application binary
 build:
 	@echo "🔨 Building application..."

@@ -2,127 +2,137 @@ package jwt
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
+	"github.com/HasanNugroho/gin-clean/config"
+	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/cache"
+	"github.com/HasanNugroho/gin-clean/pkg/errors"
 	"github.com/golang-jwt/jwt/v5"
-	redispkg "github.com/redis/go-redis/v9"
 )
 
-var (
-	jwtSecret             []byte
-	jwtExpiry             time.Duration
-	jwtRefreshTokenExpiry time.Duration
-	redisClient           *redispkg.Client
+type (
+	TokenGenerator struct {
+		cache               *cache.RedisCache
+		secret              []byte
+		tokenExpired        time.Duration
+		refreshTokenExpired time.Duration
+	}
 )
 
-func SetJWTHelper(secret string, expiry time.Duration, refreshTokenExpiry time.Duration, redis *redispkg.Client) {
-	jwtSecret = []byte(secret)
-	jwtExpiry = expiry
-	jwtRefreshTokenExpiry = refreshTokenExpiry
-	redisClient = redis
+func SetJWTHelper(config *config.Config, redis *cache.RedisCache) *TokenGenerator {
+	tokenExpiry, _ := time.ParseDuration(config.Secret.TokenExpiry)
+	refreshExpiry, _ := time.ParseDuration(config.Secret.RefreshTokenExpiry)
+	return &TokenGenerator{
+		cache:               redis,
+		secret:              []byte(config.Secret.Jwt),
+		tokenExpired:        tokenExpiry,
+		refreshTokenExpired: refreshExpiry,
+	}
 }
 
-func GenerateToken(userID string) (string, error) {
+func (t *TokenGenerator) GenerateToken(payload string) (string, error) {
 	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"data": map[string]string{
-			"user_id": userID,
-		},
-		"exp": time.Now().Add(jwtExpiry).Unix(),
-		"iat": time.Now().Unix(),
-	})
-
-	return claims.SignedString(jwtSecret)
-}
-
-func GenerateRefreshToken(userID string) (string, error) {
-	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": userID,
-		"type":    "refresh",
-		"exp":     time.Now().Add(jwtRefreshTokenExpiry).Unix(),
+		"payload": payload,
+		"exp":     time.Now().Add(t.tokenExpired).Unix(),
 		"iat":     time.Now().Unix(),
-		"nbf":     time.Now().Add(jwtExpiry).Unix(),
 	})
 
-	return claims.SignedString(jwtSecret)
+	return claims.SignedString(t.secret)
 }
 
-func ParseToken(tokenStr string) (jwt.MapClaims, error) {
-	if IsTokenRevoked("refreshtoken:blacklist:"+tokenStr) || IsTokenRevoked("token:blacklist:"+tokenStr) {
-		return nil, errors.New("invalid or expired token")
+func (t *TokenGenerator) GenerateRefreshToken(payload string) (string, error) {
+	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"payload": payload,
+		"exp":     time.Now().Add(t.refreshTokenExpired).Unix(),
+		"iat":     time.Now().Unix(),
+		"nbf":     time.Now().Add(t.tokenExpired).Unix(),
+	})
+
+	return claims.SignedString(t.secret)
+}
+
+func (t *TokenGenerator) ParseToken(rawToken string) (jwt.MapClaims, error) {
+	if t.IsTokenRevoked("refreshtoken:blacklist:"+rawToken) || t.IsTokenRevoked("token:blacklist:"+rawToken) {
+		return nil, errors.ErrUnauthorized.WithMessage("invalid or expired token")
 	}
 
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(rawToken, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
+			return nil, errors.ErrUnauthorized.WithMessage("unexpected signing method")
 		}
-		return jwtSecret, nil
+		return t.secret, nil
 	})
 
 	if err != nil || !token.Valid {
-		return nil, errors.New("invalid or expired token")
+		return nil, errors.ErrUnauthorized.WithMessage("invalid or expired token").WithError(err)
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok && token.Valid {
-		return nil, errors.New("invalid token claims")
+		return nil, errors.ErrUnauthorized.WithMessage("invalid token claims")
 	}
 	return claims, nil
 }
 
-func RevokeToken(tokenString string) error {
-	ctx := context.Background()
+func (t *TokenGenerator) ParseRefreshToken(rawToken string) (jwt.MapClaims, error) {
+	if t.IsTokenRevoked("refreshtoken:blacklist:"+rawToken) || t.IsTokenRevoked("token:blacklist:"+rawToken) {
+		return nil, errors.ErrUnauthorized.WithMessage("invalid or expired token")
+	}
 
-	token, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
+	token, _, err := jwt.NewParser().ParseUnverified(rawToken, jwt.MapClaims{})
 	if err != nil {
-		return errors.New("failed to parse token")
+		return nil, errors.ErrUnauthorized.WithMessage("failed to parse refresh token")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return errors.New("invalid token claims")
+	if !ok && token.Valid {
+		return nil, errors.ErrUnauthorized.WithMessage("invalid token claims")
+	}
+	return claims, nil
+}
+
+func (t *TokenGenerator) RevokeToken(token string) error {
+	claims, err := t.ParseToken(token)
+	if err != nil {
+		return err
 	}
 
 	exp, ok := claims["exp"].(float64)
 	if !ok {
-		return errors.New("invalid expiration claim")
+		return errors.ErrUnauthorized.WithMessage("invalid expiration claim")
 	}
 
 	ttl := time.Until(time.Unix(int64(exp), 0))
-	if err = redisClient.Set(ctx, "token:blacklist:"+tokenString, "revoked", ttl).Err(); err != nil {
-		return errors.New("failed to store token in blacklist")
+	if err = t.cache.Set(context.Background(), "token:blacklist:"+token, "revoked", ttl); err != nil {
+		return errors.ErrUnauthorized.WithMessage("failed to store token in blacklist")
 	}
+	fmt.Println("Token blacklisted:", token, "TTL:", ttl)
 
 	return nil
 }
 
-func RevokeRequestToken(refreshToken string) error {
-	ctx := context.Background()
-
-	token, _, err := jwt.NewParser().ParseUnverified(refreshToken, jwt.MapClaims{})
+func (t *TokenGenerator) RevokeRequestToken(token string) error {
+	claims, err := t.ParseRefreshToken(token)
 	if err != nil {
-		return errors.New("failed to parse token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return errors.New("invalid token claims")
+		return err
 	}
 
 	exp, ok := claims["exp"].(float64)
 	if !ok {
-		return errors.New("invalid expiration claim")
+		return errors.ErrUnauthorized.WithMessage("invalid expiration claim")
 	}
 
 	ttl := time.Until(time.Unix(int64(exp), 0))
-	if err = redisClient.Set(ctx, "refreshtoken:blacklist:"+refreshToken, "revoked", ttl).Err(); err != nil {
-		return errors.New("failed to store refresh token in blacklist")
+	if err = t.cache.Set(context.Background(), "refreshtoken:blacklist:"+token, "revoked", ttl); err != nil {
+		return errors.ErrUnauthorized.WithMessage("failed to store refresh token in blacklist")
 	}
+	fmt.Println("Token blacklisted:", token, "TTL:", ttl)
 
 	return nil
 }
 
-func IsTokenRevoked(tokenString string) bool {
-	_, err := redisClient.Get(context.Background(), tokenString).Result()
-	return err == nil
+func (t *TokenGenerator) IsTokenRevoked(tokenKey string) bool {
+	val, err := t.cache.Exist(context.Background(), tokenKey)
+	return err == nil && val > 0
 }

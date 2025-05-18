@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/HasanNugroho/gin-clean/config"
@@ -18,42 +16,43 @@ type AuthService struct {
 	repo           repository.UserRepository
 	logger         *logger.Logger
 	config         *config.Config
+	jwt            *jwt.TokenGenerator
 	contextTimeout time.Duration
 }
 
-func NewAuthService(repo repository.UserRepository, logger *logger.Logger, config *config.Config, timeout time.Duration) *AuthService {
+func NewAuthService(repo repository.UserRepository, logger *logger.Logger, config *config.Config, jwt *jwt.TokenGenerator, timeout time.Duration) *AuthService {
 	return &AuthService{
 		repo:           repo,
 		logger:         logger,
 		config:         config,
+		jwt:            jwt,
 		contextTimeout: timeout,
 	}
 }
 
-func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (dto.AuthResponse, error) {
+func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (result dto.AuthResponse, err error) {
 	ctx, cancel := context.WithTimeout(ctx, s.contextTimeout)
 	defer cancel()
 
 	user, err := s.repo.GetByEmail(ctx, req.Email)
-	fmt.Println(err)
 
 	if err != nil {
-		return dto.AuthResponse{}, errors.New("UNAUTHORIZED", "invalid email or password", http.StatusUnauthorized, err)
+		return result, errors.ErrUnauthorized.WithMessage("invalid email or password")
 	}
 
 	if !user.VerifyPassword(req.Password) {
-		return dto.AuthResponse{}, errors.New("UNAUTHORIZED", "invalid email or password", http.StatusUnauthorized, err)
+		return result, errors.ErrUnauthorized.WithMessage("invalid email or password")
 	}
 
 	// Generate JWT token
-	token, err := jwt.GenerateToken(user.ID)
+	token, err := s.jwt.GenerateToken(user.ID)
 	if err != nil {
-		return dto.AuthResponse{}, err
+		return result, err
 	}
 
-	refreshToken, err := jwt.GenerateRefreshToken(user.ID)
+	refreshToken, err := s.jwt.GenerateRefreshToken(user.ID)
 	if err != nil {
-		return dto.AuthResponse{}, err
+		return result, err
 	}
 
 	return dto.AuthResponse{
@@ -65,38 +64,60 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (dto.Auth
 	}, nil
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, req dto.RenewalTokenRequest) (dto.AuthResponse, error) {
-	// ctx, cancel := context.WithTimeout(ctx, s.contextTimeout)
-	// defer cancel()
-	// userID, err := jwt.ParseRefreshToken(req.RefreshToken, s.config.JWT.Secret)
-	// if err != nil {
-	// 	return dto.AuthResponse{}, errors.New("invalid refresh token")
-	// }
+func (s *AuthService) RefreshToken(ctx context.Context, req dto.RenewalTokenRequest) (result dto.AuthResponse, err error) {
+	ctx, cancel := context.WithTimeout(ctx, s.contextTimeout)
+	defer cancel()
+	claims, err := s.jwt.ParseToken(req.RefreshToken)
+	if err != nil {
+		return result, errors.ErrBadRequest.WithMessage("invalid refresh token").WithError(err)
+	}
 
-	// user, err := s.repo.FindByID(ctx, userID)
-	// if err != nil {
-	// 	return dto.AuthResponse{}, errors.New("user not found")
-	// }
+	if nbfRaw, ok := claims["nbf"]; ok {
+		if nbf, ok := nbfRaw.(float64); ok && time.Now().Before(time.Unix(int64(nbf), 0)) {
+			return result, errors.ErrUnauthorized.WithMessage("refresh token not yet valid")
+		}
+	}
 
-	// // Generate new access token
-	// newToken, err := jwtutil.GenerateToken(user.ID, s.config.JWT.Secret, time.Hour)
-	// if err != nil {
-	// 	return dto.AuthResponse{}, err
-	// }
+	id, ok := claims["payload"].(string)
+	if !ok {
+		return result, errors.ErrUnauthorized.WithMessage("invalid token payload")
+	}
 
-	// newRefreshToken, err := jwtutil.GenerateRefreshToken(user.ID, s.config.JWT.Secret, s.config.JWT.RefreshTokenExpiry)
-	// if err != nil {
-	// 	return dto.AuthResponse{}, err
-	// }
+	user, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return result, errors.ErrBadRequest.WithMessage("user not found")
+	}
 
-	// return dto.AuthResponse{
-	// 	Token:        newToken,
-	// 	RefreshToken: newRefreshToken,
-	// 	Data: map[string]interface{}{
-	// 		"id":    user.ID,
-	// 		"email": user.Email,
-	// 		"name":  user.Name,
-	// 	},
-	// }, nil
-	panic("un")
+	// Generate new access token
+	newToken, err := s.jwt.GenerateToken(user.ID)
+	if err != nil {
+		return result, err
+	}
+
+	newRefreshToken, err := s.jwt.GenerateRefreshToken(user.ID)
+	if err != nil {
+		return result, err
+	}
+
+	result = dto.AuthResponse{
+		Token:        newToken,
+		RefreshToken: newRefreshToken,
+		Data: map[string]interface{}{
+			"id": user.ID,
+		},
+	}
+	return
+}
+
+func (h *AuthService) Logout(c context.Context, accessToken string, req dto.RenewalTokenRequest) (err error) {
+	// Blacklist Access Token
+	if err = h.jwt.RevokeToken(accessToken); err != nil {
+		return errors.ErrInternalServer.WithMessage("failed to revoke access token")
+	}
+
+	// Blacklist Refresh Token
+	if err = h.jwt.RevokeRequestToken(req.RefreshToken); err != nil {
+		return errors.ErrInternalServer.WithMessage("failed to revoke refresh token").WithError(err)
+	}
+	return nil
 }
