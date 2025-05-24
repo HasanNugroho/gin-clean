@@ -57,10 +57,8 @@ func RegisterDependency(builder *di.Builder) (*di.Builder, error) {
 			Name: "db",
 			Build: func(ctn di.Container) (interface{}, error) {
 				// Initialize PostgreSQL connection
-				var (
-					cfg = ctn.Get("config").(*config.Config)
-					log = ctn.Get("logger").(*logger.Logger)
-				)
+				cfg := ctn.Get("config").(*config.Config)
+				log := ctn.Get("logger").(*logger.Logger)
 
 				db, err := postgresql.NewPostgresDB(cfg)
 				if err != nil {
@@ -76,10 +74,8 @@ func RegisterDependency(builder *di.Builder) (*di.Builder, error) {
 			Name: "cache",
 			Build: func(ctn di.Container) (interface{}, error) {
 				// Initialize cache connection
-				var (
-					cfg = ctn.Get("config").(*config.Config)
-					log = ctn.Get("logger").(*logger.Logger)
-				)
+				cfg := ctn.Get("config").(*config.Config)
+				log := ctn.Get("logger").(*logger.Logger)
 
 				e := cache.NewRedisCache(cfg)
 				if err := e.Ping(context.Background()); err != nil {
@@ -94,10 +90,8 @@ func RegisterDependency(builder *di.Builder) (*di.Builder, error) {
 		{
 			Name: "jwt",
 			Build: func(ctn di.Container) (interface{}, error) {
-				var (
-					cfg   = ctn.Get("config").(*config.Config)
-					cache = ctn.Get("cache").(*cache.RedisCache)
-				)
+				cfg := ctn.Get("config").(*config.Config)
+				cache := ctn.Get("cache").(*cache.RedisCache)
 				return jwt.SetJWTHelper(cfg, cache), nil
 			},
 		},

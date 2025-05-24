@@ -132,33 +132,27 @@ The project follows clean architecture principles with the following directory s
 
 ```
 .
-├── cmd/
-│   └── api/
-│       └── main.go           # Application entry point
-├── config/                   # Application configuration
-├── delivery/                 # HTTP request handlers (controllers)
-│   ├── http/
-│   │   ├── middleware/       # HTTP middleware components
-│   │   └── routes/           # API route definitions
-│   └── response/             # Response formatting
-├── docs/                     # Generated Swagger documentation
-├── domain/                   # Core business logic and entities
-│   ├── entity/               # Domain entities
-│   ├── repository/           # Repository interfaces
-│   ├── service/              # Service interfaces
-│   └── valueobject/          # Value objects
-├── infrastructure/           # External tools and services
-│   └── persistence/          # Database implementation
-├── migrations/               # Database migration files
-├── utils/                    # Utility functions
-├── .air.toml                 # Hot reload configuration
-├── .env.example              # Environment variable template
-├── docker-compose.yml        # Docker compose configuration
-├── Dockerfile                # Docker build instructions
-├── go.mod                    # Go module definition
-├── go.sum                    # Go module checksums
-├── Makefile                  # Build automation
-└── README.md                 # This file
+├── cmd                          # App entry point, runs API server
+│   └── api
+├── config                       # App configuration
+├── container                    # Dependency injection setup
+├── docs                         # Documentation and API specs
+├── internal                     # Core logic and implementation
+│   ├── domain                   # Business logic & entities
+│   │   ├── entity               # Domain entities
+│   │   ├── repository           # Data access interfaces
+│   │   └── service              # Business services
+│   ├── infrastructure           # External tools & DB impl.
+│   │   └── presistence          # Data persistence layer
+│   ├── interfaces               # Communication interfaces
+│   │   └── http
+│   │       ├── dto              # API DTOs
+│   │       ├── handler          # HTTP handlers
+│   │       └── middleware       # HTTP middleware
+│   └── service                  # Internal helpers & utilities
+├── migrations                   # DB migration scripts
+└── pkg                          # Shared libraries & utilities
+
 ```
 
 ### Clean Architecture Layers
