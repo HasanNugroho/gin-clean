@@ -12,6 +12,7 @@ import (
 	"github.com/HasanNugroho/gin-clean/pkg/validation"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/sarulabs/di/v2"
 )
 
 type UserHandler struct {
@@ -20,9 +21,17 @@ type UserHandler struct {
 	validate *validator.Validate
 }
 
-func RegisterUserRoutes(r *gin.RouterGroup, service service.UserService, log *logger.Logger, validate *validator.Validate, authMiddleware *middleware.AuthMiddleware) {
+func RegisterUserRoutes(ctn *di.Container) {
+	var (
+		router         = ctn.Get("base-router").(*gin.RouterGroup)
+		service        = ctn.Get("user-service").(service.UserService)
+		log            = ctn.Get("logger").(*logger.Logger)
+		validate       = ctn.Get("validate").(*validator.Validate)
+		authMiddleware = ctn.Get("auth-middleware").(*middleware.AuthMiddleware)
+	)
+
 	handler := NewUserHandler(service, log, validate)
-	userGroup := r.Group("v1/users")
+	userGroup := router.Group("v1/users")
 	{
 		userGroup.POST("", handler.Create)
 		userGroup.GET("/:id", authMiddleware.AuthRequired(), handler.GetById)
