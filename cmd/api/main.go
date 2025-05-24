@@ -1,15 +1,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/HasanNugroho/gin-clean/config"
+	"github.com/HasanNugroho/gin-clean/container"
 	"github.com/HasanNugroho/gin-clean/docs"
-	"github.com/HasanNugroho/gin-clean/internal/infrastructure/di"
-	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/cache"
-	"github.com/HasanNugroho/gin-clean/internal/infrastructure/presistence/postgresql"
 	"github.com/HasanNugroho/gin-clean/internal/interfaces/http/middleware"
 	"github.com/HasanNugroho/gin-clean/pkg/logger"
 	"github.com/gin-gonic/gin"
@@ -28,54 +25,30 @@ import (
 // @in header
 // @name Authorization
 func main() {
-	// Load configuration
-	cfg, err := config.Get()
-	if err != nil {
-		fmt.Printf("❌ failed to get config: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Initialize logger
-	log := logger.NewLogger(cfg.Server.LogLevel)
-
-	// Initialize PostgreSQL connection
-	db, err := postgresql.NewPostgresDB(cfg)
-	if err != nil {
-		log.Fatal("❌ Failed to connect to PostgreSQL", err)
-	}
-
-	// Initialize cache connection
-	e := cache.NewRedisCache(cfg)
-	if err := e.Ping(context.Background()); err != nil {
-		log.Fatal("❌ Failed to connect to Redis", err)
-	}
-
-	// Initialize rate-limit
-	rateLimit, err := middleware.NewRateLimiter(cfg, e)
-	if err != nil {
-		log.Fatal("❌ Failed to initialize rate limiter:", err)
-	}
-
 	// Initialize Gin engine
 	engine := gin.Default()
+
+	// Build DI container
+	ctn, err := container.Build(engine)
+	if err != nil {
+		fmt.Printf("❌ Failed to build DI container: %v\n", err)
+		os.Exit(1)
+	}
+	defer ctn.Clean()
+
+	var (
+		rateLimit = ctn.Get("rate-limit").(*middleware.RateLimit)
+		log       = ctn.Get("logger").(*logger.Logger)
+		cfg       = ctn.Get("config").(*config.Config)
+	)
+
+	// Global middlware
 	engine.Use(
 		gin.Recovery(),
 		rateLimit.RateLimit(),
 		middleware.ErrorHandler(log),
 		middleware.SecurityMiddleware(cfg),
 	)
-
-	// Setup Dependency Injection container with Gin engine and other dependencies
-	container, err := di.Build(engine, cfg, log, db, e)
-	if err != nil {
-		log.Fatal("❌ Failed to build DI container", err)
-	}
-	defer container.Clean()
-
-	// Triggerhandler registration
-	_ = container.Get("user-handler")
-	_ = container.Get("auth-handler")
-	_ = container.Get("auth-middleware")
 
 	// Swagger
 	setupSwagger(engine, cfg)
@@ -86,6 +59,7 @@ func main() {
 	}
 }
 
+// setupSwagger configures the Swagger UI endpoint.
 func setupSwagger(r *gin.Engine, cfg *config.Config) {
 	docs.SwaggerInfo.Title = cfg.Server.Name
 	docs.SwaggerInfo.Description = cfg.Server.Name

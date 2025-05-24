@@ -12,11 +12,11 @@ import (
 	"github.com/ulule/limiter/v3/drivers/store/redis"
 )
 
-type rateLimit struct {
+type RateLimit struct {
 	limiter *limiter.Limiter
 }
 
-func (l *rateLimit) RateLimit() gin.HandlerFunc {
+func (l *RateLimit) RateLimit() gin.HandlerFunc {
 	if l.limiter == nil {
 		fmt.Println("⚠️ Limiter instance is nil, skipping middleware")
 		return func(c *gin.Context) {
@@ -28,7 +28,7 @@ func (l *rateLimit) RateLimit() gin.HandlerFunc {
 	return mgin.NewMiddleware(l.limiter)
 }
 
-func NewRateLimiter(config *config.Config, redisClient *cache.RedisCache) (*rateLimit, error) {
+func NewRateLimiter(config *config.Config, redisClient *cache.RedisCache) (*RateLimit, error) {
 	if config.Security.RateLimit == "" {
 		return nil, nil
 	}
@@ -53,7 +53,7 @@ func NewRateLimiter(config *config.Config, redisClient *cache.RedisCache) (*rate
 		return nil, fmt.Errorf("failed to create redis store: %w", err)
 	}
 
-	return &rateLimit{
+	return &RateLimit{
 		limiter: limiter.New(store, rate, options...),
 	}, nil
 }
