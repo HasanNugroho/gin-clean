@@ -1,3 +1,5 @@
+-include .env
+
 .PHONY: all build run watch gen-docs \
         migration-create migration-up migration-down \
         docker-run docker-down \
@@ -38,8 +40,6 @@ gen-docs:
 
 
 ## ---------- Migration ----------
-
-include .env
 
 ## migration-create: Create a new DB migration. Usage: make migration-create desc=your_description
 migration-create:
